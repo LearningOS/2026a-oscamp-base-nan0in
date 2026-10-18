@@ -2,8 +2,8 @@
   "schema": 1,
   "courseId": 2074,
   "repository": "LearningOS/2026a-oscamp-base-nan0in",
-  "commit": "250b9d2d52fa78d96621a69b44020ae5c2258279",
-  "score": 15,
+  "commit": "d5d6d96b13a8f468630298d4af15d6539c4f5858",
+  "score": 11,
   "totalScore": 100,
   "exercises": [
     {
@@ -30,9 +30,9 @@
     {
       "name": "process_pipe",
       "max": 4,
-      "score": 4,
-      "status": "pass",
-      "exitCode": 0
+      "score": 0,
+      "status": "fail",
+      "exitCode": 101
     },
     {
       "name": "mem_primitives",
@@ -176,9 +176,9 @@
     }
   ],
   "student": "nan0in",
-  "runId": "39153792126",
+  "runId": "39155462007",
   "runAttempt": "1",
   "upload": {
-    "status": "accepted"
+    "status": "pending"
   }
 }
