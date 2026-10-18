@@ -2,7 +2,7 @@
   "schema": 1,
   "courseId": 2074,
   "repository": "LearningOS/2026a-oscamp-base-nan0in",
-  "commit": "d5d6d96b13a8f468630298d4af15d6539c4f5858",
+  "commit": "e052cec4e7492fb00110992bba360890c6051a2f",
   "score": 11,
   "totalScore": 100,
   "exercises": [
@@ -176,9 +176,9 @@
     }
   ],
   "student": "nan0in",
-  "runId": "39155462007",
+  "runId": "39156002574",
   "runAttempt": "1",
   "upload": {
-    "status": "accepted"
+    "status": "pending"
   }
 }
