@@ -238,7 +238,7 @@ pub fn pipe_through_grep(pattern: &str, input: &str) -> String {
 
     //逐行读取grep输出
     let stdout = child.stdout.take().unwrap();
-    let reader = BufReader::new(stdout);
+    let mut reader = BufReader::new(stdout);
 
     let mut result=String::new();
     let mut line =String::new();

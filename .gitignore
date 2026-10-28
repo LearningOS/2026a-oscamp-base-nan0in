@@ -28,3 +28,4 @@ Thumbs.db
 __pycache__/
 
 diff.md
+/exercises/02_no_std_dev/04_syscall_wrapper/src/p*

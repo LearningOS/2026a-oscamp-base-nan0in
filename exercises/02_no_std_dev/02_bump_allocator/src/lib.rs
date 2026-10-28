@@ -57,12 +57,14 @@ impl BumpAllocator {
 
     /// Reset the allocator (free all allocated memory).
     pub fn reset(&self) {
-        self.next.store(self.heap_start, Ordering::SeqCst);
+        self.next
+            .store(self.heap_start, Ordering::SeqCst);
     }
 }
 
 unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // layout类型用来描述一次内存分配需要的大小和对齐要求
         // TODO: Implement bump allocation
         //
         // Steps:
@@ -74,7 +76,41 @@ unsafe impl GlobalAlloc for BumpAllocator {
         // 5. Atomically update next to end using compare_exchange
         //    (if CAS fails, another thread raced — retry in a loop)
         // 6. Return the aligned address as a pointer
-        todo!()
+        loop {
+            // 读取next
+            let current = self
+                .next
+                .load(Ordering::SeqCst); //Sequential
+                                         //Consistency，顺序一致约束读取
+
+            //align
+            let align = layout.align();
+            let Some(aligned) = current
+                .checked_add(align - 1)
+                .map(|addr| addr & !(align - 1))
+            else {
+                return null_mut();
+            };
+
+            //计算结束地址
+            let Some(end) = aligned.checked_add(layout.size()) else {
+                return null_mut();
+            };
+
+            // 检查堆边界
+            if end > self.heap_end {
+                return null_mut();
+            }
+
+            //CAS
+            if self
+                .next
+                .compare_exchange(current, end, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                return aligned as *mut u8;
+            }
+        }
     }
 
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {

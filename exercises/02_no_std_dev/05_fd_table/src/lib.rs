@@ -51,13 +51,16 @@ pub struct FdTable {
     // TODO: Design the internal structure
     // Hint: use Vec<Option<Arc<dyn File>>>
     //       the index is the fd number, None means the fd is closed or unallocated
+    entries: Vec<Option<Arc<dyn File>>>,
 }
 
 impl FdTable {
     /// Create an empty fd table
     pub fn new() -> Self {
         // TODO
-        todo!()
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     /// Allocate a new fd, return the fd number.
@@ -65,25 +68,60 @@ impl FdTable {
     /// Prefers reusing the smallest closed fd number; if no free slot, appends to the end.
     pub fn alloc(&mut self, file: Arc<dyn File>) -> usize {
         // TODO
-        todo!()
+        for (fd, entry) in self
+            .entries
+            .iter_mut()
+            .enumerate()
+        {
+            if entry.is_none() {
+                *entry = Some(file);
+                return fd;
+            }
+        }
+
+        //位置不够扩展
+        let fd = self
+            .entries
+            .len();
+        self.entries
+            .push(Some(file));
+        fd
     }
 
     /// Get the file object for an fd. Returns None if the fd doesn't exist or is closed.
     pub fn get(&self, fd: usize) -> Option<Arc<dyn File>> {
         // TODO
-        todo!()
+        self.entries
+            .get(fd)?
+            .clone()
     }
 
     /// Close an fd. Returns true on success, false if the fd doesn't exist or is already closed.
     pub fn close(&mut self, fd: usize) -> bool {
         // TODO
-        todo!()
+        match self
+            .entries
+            .get_mut(fd)
+        {
+            Some(entry) => {
+                if entry.is_some() {
+                    *entry = None;
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
     }
 
     /// Return the number of currently allocated fds (excluding closed ones)
     pub fn count(&self) -> usize {
         // TODO
-        todo!()
+        self.entries
+            .iter()
+            .filter(|entry| entry.is_some())
+            .count()
     }
 }
 
@@ -121,7 +159,10 @@ mod tests {
             1
         }
         fn write(&self, buf: &[u8]) -> isize {
-            self.write_log.lock().unwrap().push(buf.to_vec());
+            self.write_log
+                .lock()
+                .unwrap()
+                .push(buf.to_vec());
             buf.len() as isize
         }
     }
@@ -143,15 +184,20 @@ mod tests {
         let got = table.get(fd);
         assert!(got.is_some(), "get should return Some");
         let mut buf = [0u8; 1];
-        got.unwrap().read(&mut buf);
+        got.unwrap()
+            .read(&mut buf);
         assert_eq!(buf[0], 42);
     }
 
     #[test]
     fn test_get_invalid() {
         let table = FdTable::new();
-        assert!(table.get(0).is_none());
-        assert!(table.get(999).is_none());
+        assert!(table
+            .get(0)
+            .is_none());
+        assert!(table
+            .get(999)
+            .is_none());
     }
 
     #[test]
@@ -163,7 +209,9 @@ mod tests {
 
         assert!(table.close(fd1), "closing fd=1 should succeed");
         assert!(
-            table.get(fd1).is_none(),
+            table
+                .get(fd1)
+                .is_none(),
             "get should return None after close"
         );
 
@@ -201,7 +249,9 @@ mod tests {
         let mut table = FdTable::new();
         let file = MockFile::new(0);
         let fd = table.alloc(file);
-        let f = table.get(fd).unwrap();
+        let f = table
+            .get(fd)
+            .unwrap();
         let n = f.write(b"hello");
         assert_eq!(n, 5);
     }
