@@ -137,7 +137,26 @@ impl Scheduler {
     ///    `sp` must be 16-byte aligned (e.g. `(stack_top - 16) & !15` to leave headroom).
     /// 3. Push a `GreenThread` with this context, state `Ready`, and `entry` stored for the wrapper to call.
     pub fn spawn(&mut self, entry: extern "C" fn()) {
-        todo!("alloc stack, init ctx with ra=thread_wrapper and aligned sp, push GreenThread(Ready, entry)")
+        // 每个绿色线程一块独立栈，放在堆上。
+        let stack = vec![0u8; STACK_SIZE];
+        let stack_top = stack.as_ptr() as usize + STACK_SIZE;
+
+        let mut ctx = TaskContext::default();
+
+        // 第一次切过来时，switch_context 的 `ret` 会跳到 ra，
+        // 所以 ra 指向 thread_wrapper 而不是用户入口。
+        // 由 thread_wrapper 负责取出真正的 entry 并调用它。
+        ctx.ra = thread_wrapper as *const () as u64;
+
+        // 留 16 字节 headroom 再向下对齐：sp 必须在函数入口处 16 字节对齐。
+        ctx.sp = ((stack_top - 16) & !15) as u64;
+
+        self.threads.push(GreenThread {
+            ctx,
+            state: ThreadState::Ready,
+            _stack: Some(stack),
+            entry: Some(entry),
+        });
     }
 
     /// Run the scheduler until all threads (except the main one) are `Finished`.
@@ -146,12 +165,84 @@ impl Scheduler {
     /// 2. Loop: if all threads in `threads[1..]` are `Finished`, break; otherwise call `schedule_next()` (which may switch away and later return).
     /// 3. Clear `SCHEDULER` when done.
     pub fn run(&mut self) {
-        todo!("set SCHEDULER to self, loop until threads[1..] all Finished, call schedule_next, then clear SCHEDULER")
+        // 把调度器地址挂到全局，yield_now / thread_finished 才能找回它。
+        unsafe {
+            SCHEDULER = self as *mut Scheduler;
+        }
+
+        loop {
+            // 除 main（index 0）之外还有没有活着的线程？
+            // 用 != Finished 而不是 == Ready，是因为正在 Running 的也算活着。
+            let alive = self
+                .threads
+                .iter()
+                .skip(1)
+                .any(|t| t.state != ThreadState::Finished);
+            if !alive {
+                break;
+            }
+
+            // 可能切走很久再切回来，回来后重新进下一轮循环。
+            self.schedule_next();
+        }
+
+        // 收尾时清空全局指针，避免悬垂引用。
+        unsafe {
+            SCHEDULER = std::ptr::null_mut();
+        }
     }
 
     /// Find the next ready thread (starting from `current + 1` round-robin), mark current as `Ready` (if not `Finished`), mark next as `Running`, set `CURRENT_THREAD_ENTRY` if the next thread has an entry, then switch to it.
     fn schedule_next(&mut self) {
-        todo!("round-robin find next Ready, set current Ready (if not Finished), next Running, CURRENT_THREAD_ENTRY, then switch_context")
+        let len = self.threads.len();
+
+        // 从 current 的下一个开始，绕一圈找出第一个 Ready 的线程。
+        // 1..=len 意味着最多走 len 步，正好覆盖所有其它线程再回到自己。
+        let mut next = None;
+        for i in 1..=len {
+            let idx = (self.current + i) % len;
+            if self.threads[idx].state == ThreadState::Ready {
+                next = Some(idx);
+                break;
+            }
+        }
+
+        // 没有可运行的线程（比如都 Finished 了），直接返回让 run 去判断结束。
+        let next = match next {
+            Some(n) => n,
+            None => return,
+        };
+
+        // 当前线程如果只是让出 CPU（Running），回退成 Ready 以便以后再次被调度；
+        // 如果已经是 Finished，就不能复活它。
+        if self.threads[self.current].state == ThreadState::Running {
+            self.threads[self.current].state = ThreadState::Ready;
+        }
+
+        self.threads[next].state = ThreadState::Running;
+
+        // 该线程如果是第一次被调度，entry 还在；
+        // 取出来交给 thread_wrapper，由它调用真正的用户函数。
+        // take() 同时把它置为 None，保证只调用一次。
+        if let Some(entry) = self.threads[next].entry.take() {
+            unsafe {
+                CURRENT_THREAD_ENTRY = Some(entry);
+            }
+        }
+
+        let old_idx = self.current;
+        self.current = next;
+
+        // 取两个上下文的裸指针。这里必须绕过借用检查：
+        // 切换过程中同一块 Scheduler 会被不同栈上的代码访问。
+        unsafe {
+            let old = self.threads[old_idx].ctx.as_mut_ptr();
+            let new = &self.threads[next].ctx as *const TaskContext;
+            switch_context(&mut *old, &*new);
+        }
+
+        // 切换回来时从这里继续：此时 current 可能已经被别的线程改过了，
+        // 所以函数在这里直接结束，不再碰 self。
     }
 }
 

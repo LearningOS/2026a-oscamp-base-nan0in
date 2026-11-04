@@ -33,7 +33,21 @@ impl Future for CountDown {
     type Output = &'static str;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        todo!()
+        // 先拿到 &mut Self。Pin 保证对象不会被移动，
+        // 而 CountDown 本身没有任何自引用，所以 get_mut() 是安全的。
+        let this = self.get_mut();
+
+        if this.count == 0 {
+            // 倒数结束，交出结果。
+            Poll::Ready("liftoff!")
+        } else {
+            this.count -= 1;
+            // 关键：告诉执行器「我有进展了，请再 poll 我一次」。
+            // 否则执行器会一直挂起，await 永远不返回。
+            cx.waker()
+                .wake_by_ref();
+            Poll::Pending
+        }
     }
 }
 
@@ -57,7 +71,18 @@ impl Future for YieldOnce {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        todo!()
+        let this = self.get_mut();
+
+        if this.yielded {
+            // 第二次 poll：让出一次就够了，直接完成。
+            Poll::Ready(())
+        } else {
+            this.yielded = true;
+            // 第一次 poll：先挂起，再唤醒自己，保证很快会被再次 poll。
+            cx.waker()
+                .wake_by_ref();
+            Poll::Pending
+        }
     }
 }
 

@@ -15,23 +15,56 @@ use tokio::sync::mpsc;
 ///
 /// Hint: Set channel capacity to items.len().max(1)
 pub async fn producer_consumer(items: Vec<String>) -> Vec<String> {
-    // TODO: Create channel with mpsc::channel
-    // TODO: Spawn producer task: iterate through items, send each one
-    // TODO: Spawn consumer task: loop recv until channel closes, collect results
-    // TODO: Wait for consumer to complete and return results
-    todo!()
+    // 有界通道：容量至少为 1（tokio 不允许 0 容量）。
+    let (tx, mut rx) = mpsc::channel::<String>(items.len().max(1));
+
+    // 生产者任务：把 items 搬进去逐个 send。send 是 async 的：
+    // 通道满时会挂起任务而不是阻塞线程。
+    tokio::spawn(async move {
+        for item in items {
+            tx.send(item)
+                .await
+                .unwrap();
+        }
+        // tx 在这里被 drop，接收端随后会收到 None，循环自然结束。
+    });
+
+    // 消费者：在当前任务里直接收，直到通道关闭。
+    let mut result = Vec::new();
+    while let Some(item) = rx.recv().await {
+        result.push(item);
+    }
+    result
 }
 
 /// Fan‑in pattern: multiple producers, one consumer.
 /// Create `n_producers` producers, each sending `"producer {id}: message"`.
 /// Consumer collects all messages, sorts them, and returns.
 pub async fn fan_in(n_producers: usize) -> Vec<String> {
-    // TODO: Create mpsc channel
-    // TODO: Spawn n_producers producer tasks
-    //       Each sends format!("producer {id}: message")
-    // TODO: Drop the original sender (important! otherwise channel won't close)
-    // TODO: Consumer loops receiving, collects and sorts
-    todo!()
+    let (tx, mut rx) = mpsc::channel::<String>(n_producers.max(1));
+
+    for id in 0..n_producers {
+        // 每个生产者拿一份自己的 Sender 克隆。
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let msg = format!("producer {id}: message");
+            tx.send(msg)
+                .await
+                .unwrap();
+        });
+    }
+
+    // 关键一步：把原始 tx 扔掉。
+    // 否则 rx.recv().await 会因为它一直「还没关闭」而永远等下去。
+    drop(tx);
+
+    let mut result = Vec::new();
+    while let Some(msg) = rx.recv().await {
+        result.push(msg);
+    }
+    // 多个生产者完成的顺序不确定，排序让输出可复现。
+    result.sort();
+    result
 }
 
 #[cfg(test)]

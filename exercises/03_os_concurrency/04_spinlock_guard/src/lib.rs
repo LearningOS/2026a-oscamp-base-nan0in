@@ -39,9 +39,17 @@ impl<T> SpinLock<T> {
     ///
     /// TODO: Spin-wait to acquire lock (compare_exchange), return SpinGuard on success.
     pub fn lock(&self) -> SpinGuard<'_, T> {
-        // TODO: Spin-wait to acquire lock
-        // TODO: Return SpinGuard { lock: self }
-        todo!()
+        // 自旋抢锁：成功一次就把锁的所有权交给返回的 SpinGuard。
+        loop {
+            if self
+                .locked
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                return SpinGuard { lock: self };
+            }
+            core::hint::spin_loop();
+        }
     }
 }
 
@@ -51,7 +59,8 @@ impl<T> Deref for SpinGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        todo!()
+        // 持有 guard 期间锁一定是被拿着的，所以把内部裸指针借出来是安全的。
+        unsafe { &*self.lock.data.get() }
     }
 }
 
@@ -59,7 +68,8 @@ impl<T> Deref for SpinGuard<'_, T> {
 // Return &mut T
 impl<T> DerefMut for SpinGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
-        todo!()
+        // &mut self 保证同时只有一个可变借用，独占性由类型系统兜底。
+        unsafe { &mut *self.lock.data.get() }
     }
 }
 
@@ -67,7 +77,10 @@ impl<T> DerefMut for SpinGuard<'_, T> {
 // Set lock.locked to false (Release ordering)
 impl<T> Drop for SpinGuard<'_, T> {
     fn drop(&mut self) {
-        todo!()
+        // RAII 的关键：离开作用域（包括 panic 展开）都会走这里，自动解锁。
+        self.lock
+            .locked
+            .store(false, Ordering::Release);
     }
 }
 
